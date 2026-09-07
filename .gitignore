@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+.DS_Store
+*.log
+playwright-report/
+test-results/
+.playwright-cli/
+realtime-fixture.*/
+output/playwright/
+dist/
+TEMPLATE-SOURCE.json

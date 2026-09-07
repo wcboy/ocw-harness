@@ -1,0 +1,80 @@
+#!/bin/sh
+set -u
+
+export PATH="/opt/homebrew/opt/node@22/bin:/opt/homebrew/opt/node/bin:/opt/homebrew/bin:/usr/local/opt/node@22/bin:/usr/local/opt/node/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+export OCW_HARNESS_SESSION_ID="desktop-default"
+
+contents_dir=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+project_path_file="$contents_dir/Resources/project-path"
+runtime_path_file="$contents_dir/Resources/runtime-path"
+browser_bundle_id_file="$contents_dir/Resources/browser-bundle-id"
+registry_path_file="$contents_dir/Resources/registry-path"
+log_dir="$HOME/Library/Logs/OCW Harness"
+log_path="$log_dir/desktop-launcher.log"
+run_output=$(/usr/bin/mktemp -t ocw-harness-launch)
+
+mkdir -p "$log_dir"
+
+cleanup() {
+  /bin/rm -f "$run_output"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+show_failure() {
+  message=${1:-"请查看启动日志：$log_path"}
+  /usr/bin/osascript - "$message" "$log_path" <<'APPLESCRIPT' >/dev/null 2>&1 || true
+on run argv
+  display alert "OCW Harness 无法启动" message (item 1 of argv) buttons {"好"} default button "好" as critical
+end run
+APPLESCRIPT
+}
+
+if [ ! -r "$project_path_file" ]; then
+  show_failure "桌面入口缺少项目位置记录；请重新安装桌面入口。"
+  exit 1
+fi
+
+IFS= read -r project_dir <"$project_path_file"
+run_script="$project_dir/scripts/run-bound-ui.sh"
+
+if [ -r "$runtime_path_file" ]; then
+  IFS= read -r runtime_path <"$runtime_path_file"
+  if [ -n "$runtime_path" ]; then
+    export OCW_RUNTIME_PATH="$runtime_path"
+    export PATH="$runtime_path:$PATH"
+  fi
+fi
+
+if [ -r "$browser_bundle_id_file" ]; then
+  IFS= read -r browser_bundle_id <"$browser_bundle_id_file"
+  if [ -n "$browser_bundle_id" ]; then
+    export OCW_BROWSER_BUNDLE_ID="$browser_bundle_id"
+  fi
+fi
+
+if [ -r "$registry_path_file" ]; then
+  IFS= read -r registry_path <"$registry_path_file"
+  if [ -n "$registry_path" ]; then
+    export OCW_HARNESS_REGISTRY_DIR="$registry_path"
+  fi
+fi
+
+if [ -z "$project_dir" ] || [ ! -x "$run_script" ]; then
+  show_failure "桌面入口找不到对应项目。项目可能已被移动；请重新安装桌面入口。"
+  exit 1
+fi
+
+printf '\n[%s] desktop launch\n' "$(date '+%Y-%m-%d %H:%M:%S')" >>"$log_path"
+"$run_script" >"$run_output" 2>&1
+status=$?
+/bin/cat "$run_output" >>"$log_path"
+
+if [ "$status" -ne 0 ]; then
+  last_message=$(tail -n 8 "$run_output" | tr '\n' ' ' | cut -c 1-700)
+  show_failure "${last_message:-启动未完成。} 详细日志：$log_path"
+fi
+
+exit "$status"

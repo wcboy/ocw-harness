@@ -1,0 +1,28 @@
+{
+  "schema_version": "ocw-harness-ui-binding-2",
+  "frontend_required": true,
+  "source_mode": "canonical_read_only",
+  "registry": {
+    "mode": "explicit_local_registration",
+    "schema_version": "ocw-harness-registry-1",
+    "endpoint": "/api/registry"
+  },
+  "health_endpoint": "/api/health",
+  "snapshot_endpoint": "/api/snapshot",
+  "stream_endpoint": "/api/stream",
+  "render_mode": "source_generated",
+  "checkpoint_model": {
+    "sequence": "dependency_dag.topological_layers",
+    "parallelism": "orthogonal_nodes_within_layer",
+    "alternatives": "stable_paths_with_separate_attempt_history",
+    "selection": "versioned_transition_decisions",
+    "agent_precedence": [
+      "path",
+      "checkpoint",
+      "edge"
+    ],
+    "groups": "explicit_all_required_members"
+  },
+  "frontend_dir": "dist",
+  "design_version": "checkpoint-paths-2"
+}

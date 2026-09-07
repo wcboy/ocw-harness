@@ -1,0 +1,29 @@
+{
+  "name": "ocw-workflow-console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs --dev",
+    "build": "vite build",
+    "start": "node server.mjs",
+    "test": "node --test scripts/native-graph.test.mjs scripts/ui-release.test.mjs scripts/graph-layout.test.mjs scripts/harness-registry.test.mjs scripts/workflow-projection.test.mjs scripts/runtime-resilience.test.mjs && python3 -m unittest discover -s scripts -p 'test_ocw*.py' -v",
+    "typecheck": "tsc --noEmit",
+    "check": "npm test && npm run typecheck && npm run build",
+    "e2e": "npm run build && node --test --test-concurrency=1 scripts/e2e-console.mjs",
+    "ensure-ui": "node scripts/ensure-ui.mjs"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.0.2",
+    "playwright": "^1.62.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.4"
+  }
+}
