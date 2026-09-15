@@ -157,8 +157,7 @@ test('an executed ocw-plan-2 runtime projects to the same documented shape', asy
   const statusSources = new Set(snapshot.body.groups.flatMap(group => group.checkpoints.map(cp => cp.statusSource)));
   assert.deepEqual([...statusSources], ['runtime_checkpoint']);
 
-  // `agentActivity.native` is an internal flag server.mjs sets on the
-  // projection's own object; it must not reach the wire.
+  // `native` is an internal projection input; it must not reach the wire.
   assert.equal('native' in snapshot.body.agentActivity, false);
 
   const health = await request('/api/health');
