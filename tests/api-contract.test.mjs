@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { registerHarness } from '../scripts/harness-registry.mjs';
@@ -36,11 +36,45 @@ function assertKeys(label, body, schema) {
   assert.deepEqual(undeclared, [], `${label}: server returned keys docs/openapi.json does not declare: ${undeclared}`);
 }
 
-async function adapter(context) {
+/** Run a command to completion, rejecting with its stderr so failures are legible. */
+function run(command, args, options) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], ...options });
+    let out = '', err = '';
+    child.stdout.on('data', chunk => { out += chunk; });
+    child.stderr.on('data', chunk => { err += chunk; });
+    child.on('error', reject);
+    child.on('exit', code => code === 0 ? resolve(out) : reject(new Error(`${command} exited ${code}: ${err || out}`)));
+  });
+}
+
+/**
+ * Build a real `ocw-plan-2` runtime and execute it.
+ *
+ * The synthetic fixture is an OCW-protocol source, which projects through the
+ * legacy branch; only a runtime the executor produced has an `ocw-graph-2`
+ * export, so the native branch is otherwise untested against the documented
+ * response shape. The plan comes from the quickstart generator so that example
+ * is held to the same contract.
+ */
+async function nativeSource(root) {
+  const workspace = join(root, 'workspace');
+  await mkdir(workspace, { recursive: true });
+  const plan = join(root, 'plan.json');
+  await writeFile(plan, await run('python3', [join(app, 'examples/quickstart/make_plan.py'), '--workspace', workspace]));
+  const runtimeRoot = join(root, 'runtime');  // `init` requires a directory that does not exist yet.
+  await run('python3', [join(app, 'scripts/ocw_runtime.py'), 'init', '--root', runtimeRoot, '--plan', plan], { cwd: app });
+  await run('python3', [join(app, 'scripts/ocw_runtime.py'), 'run', '--root', runtimeRoot], { cwd: app });
+  return runtimeRoot;
+}
+
+async function adapter(context, { native = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'ocw-api-contract-'));
   const registryDir = join(root, 'registry');
-  const fixture = await writeFixtureWorkflow(join(root, 'task'), { taskId: 'TASK-CONTRACT', prefix: 'API' });
-  const registration = await registerHarness({ source: fixture.root, sessionId: 'contract', processId: process.pid, registryDir });
+  const source = native
+    ? await nativeSource(root)
+    : (await writeFixtureWorkflow(join(root, 'task'), { taskId: 'TASK-CONTRACT', prefix: 'API' })).root;
+  const registration = await registerHarness({ source, sessionId: 'contract', processId: process.pid, registryDir });
 
   const probe = createServer().listen(0, '127.0.0.1');
   await once(probe, 'listening');
@@ -101,6 +135,34 @@ test('health, registry, snapshot and diagnostics match docs/openapi.json', async
   const diagnostics = await request('/api/diagnostics');
   assert.equal(diagnostics.status, 200);
   assertKeys('GET /api/diagnostics', diagnostics.body, spec.components.schemas.Diagnostics);
+});
+
+test('an executed ocw-plan-2 runtime projects to the same documented shape', async context => {
+  const { request, registration } = await adapter(context, { native: true });
+
+  const snapshot = await request(`/api/snapshot?harness=${registration.registrationId}`);
+  assert.equal(snapshot.status, 200);
+  assertKeys('GET /api/snapshot (native)', snapshot.body, schemaFor('/api/snapshot', '200'));
+  assertKeys('GET /api/snapshot (native) agentActivity', snapshot.body.agentActivity, spec.components.schemas.AgentActivity);
+
+  // Confirm this really is the native branch rather than a second pass over
+  // the legacy one, otherwise the test above proves nothing new.
+  assert.equal(snapshot.body.checkpointTree.schemaVersion, 'ocw-graph-2');
+  assert.equal(snapshot.body.journey.pathGranularity, 'bundle_transition');
+  assert.equal(snapshot.body.execution.engine, 'ocw-local-executor-2');
+  assert.equal(snapshot.body.metrics.checkpointsComplete, 3);
+  assert.equal(snapshot.body.metrics.checkpointsTotal, 3);
+
+  // Statuses on this branch come from the executor, and say so.
+  const statusSources = new Set(snapshot.body.groups.flatMap(group => group.checkpoints.map(cp => cp.statusSource)));
+  assert.deepEqual([...statusSources], ['runtime_checkpoint']);
+
+  // `agentActivity.native` is an internal flag server.mjs sets on the
+  // projection's own object; it must not reach the wire.
+  assert.equal('native' in snapshot.body.agentActivity, false);
+
+  const health = await request('/api/health');
+  assert.equal(health.body.binding.capabilities.canonicalWrites, false);
 });
 
 test('documented caching, error shapes and read-only enforcement hold', async context => {
