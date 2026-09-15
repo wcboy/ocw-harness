@@ -71,6 +71,12 @@ it. No runtime behaviour, wire format or on-disk contract changed.
   always exiting 0, so it is usable as a check.
 - The package is named `ocw-harness` (was `ocw-workflow-console`) and is no
   longer `private`.
+- The macOS bundle identifier and launchd label no longer hardcode one
+  developer's reverse-DNS prefix. `OCW_BUNDLE_PREFIX` overrides it, defaulting
+  to `io.github.wcboy`. A service is now located by kind and name whatever
+  prefix installed it, so an existing service stays addressable across the
+  change — verified against two live launchd services, which `service status`
+  still resolves under their original labels.
 
 ### Removed
 

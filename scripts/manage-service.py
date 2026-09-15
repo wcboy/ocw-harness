@@ -12,6 +12,22 @@ import sys
 from ocw_runtime import atomic, encoded, identifier
 
 
+def installed_label(kind, name):
+    """Label of an already-installed service for this kind/name, whatever prefix installed it.
+
+    A launchd label is immutable once loaded, so a service must stay addressable
+    under the label it was installed with even after the bundle prefix changes.
+    The service's identity is kind and name; the prefix only namespaces it.
+    """
+    agents = Path.home() / 'Library/LaunchAgents'
+    if not agents.is_dir():
+        return None
+    found = sorted(path.name[:-len('.plist')] for path in agents.glob(f'*.ocw-{kind}-{name}.plist'))
+    if len(found) > 1:
+        raise ValueError(f'multiple services claim {kind}/{name}: {found}; remove the stale one first')
+    return found[0] if found else None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['install', 'status', 'reset', 'remove'])
@@ -29,7 +45,11 @@ def main():
     if sys.platform != 'darwin':
         parser.error('macOS launchd only; use the foreground entry with your Linux service manager')
     identifier(args.name)
-    label = 'com.lamarwang.ocw-' + args.kind + '-' + args.name
+    # An existing service keeps the label it was installed under, so changing
+    # OCW_BUNDLE_PREFIX cannot orphan one; a new install takes the current
+    # prefix, and `install` still refuses a kind/name another prefix already holds.
+    label = installed_label(args.kind, args.name) \
+        or os.environ.get('OCW_BUNDLE_PREFIX', 'io.github.wcboy') + '.ocw-' + args.kind + '-' + args.name
     domain = f'gui/{os.getuid()}'
     plist = Path.home() / 'Library/LaunchAgents' / (label + '.plist')
     state = Path(args.registry).resolve().parent / 'services' / label
