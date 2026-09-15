@@ -251,15 +251,52 @@ def restore(archive_path, destination):
         raise
 
 
+EPILOG = """\
+Prints JSON on stdout; exits 1 with a message on stderr when rejected.
+
+Examples:
+  ocw-backup create  --config /abs/backup.json --destination /abs/backups
+  ocw-backup verify  --archive /abs/backups/ocw-<stamp>.tar.gz
+  ocw-backup restore --archive /abs/backups/ocw-<stamp>.tar.gz \\
+      --destination /abs/new-directory
+
+Restore refuses an existing destination, closes restored registrations,
+expires running attempts and holds execution. Read RESTORE-REPORT.json and
+reconcile unknown operations before `ocw-runtime activate-restore`.
+"""
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog='ocw-backup', description=__doc__, epilog=EPILOG,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest='command', required=True, metavar='<command>')
+
+    create_archive = commands.add_parser('create', help='Write a checksum-verified archive')
+    create_archive.add_argument('--config', required=True, metavar='FILE',
+                                help='Backup config JSON with an `items` array')
+    create_archive.add_argument('--destination', required=True, metavar='DIR',
+                                help='Directory to write the archive into')
+
+    check = commands.add_parser('verify', help='Check every entry in an archive')
+    check.add_argument('--archive', required=True, metavar='FILE', help='Archive to verify')
+
+    extract = commands.add_parser('restore', help='Verify, then extract into a new directory')
+    extract.add_argument('--archive', required=True, metavar='FILE', help='Archive to restore')
+    extract.add_argument('--destination', required=True, metavar='DIR',
+                         help='Directory to create. Must not already exist')
+
+    return parser
+
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['create', 'verify', 'restore'])
-    parser.add_argument('--config')
-    parser.add_argument('--archive')
-    parser.add_argument('--destination')
-    args = parser.parse_args()
+    args = build_parser().parse_args()
     try:
-        result = create(json.loads(Path(args.config).read_text()), args.destination) if args.command == 'create' else restore(args.archive, args.destination) if args.command == 'restore' else verify(args.archive)
+        if args.command == 'create':
+            result = create(json.loads(Path(args.config).read_text()), args.destination)
+        elif args.command == 'restore':
+            result = restore(args.archive, args.destination)
+        else:
+            result = verify(args.archive)
         print(json.dumps(result, ensure_ascii=False))
     except (ValueError, OSError, KeyError, sqlite3.Error, tarfile.TarError) as error:
         print('OCW backup: ' + str(error), file=sys.stderr)

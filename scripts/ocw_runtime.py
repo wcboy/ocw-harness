@@ -6,7 +6,7 @@ delivery goes through the operation ledger. Never point init at a historical roo
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -617,62 +617,156 @@ def run_workers(runtime, workers=2, lease=30):
     return runtime.status()
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['init', 'run', 'status', 'publish', 'activate-restore', 'decide-path', 'invalidate-checkpoint'])
-    parser.add_argument('--root', required=True)
-    parser.add_argument('--plan')
-    parser.add_argument('--path-id')
-    parser.add_argument('--checkpoint-id')
-    parser.add_argument('--actor')
-    parser.add_argument('--reason')
-    parser.add_argument('--expected-revision', type=int)
-    parser.add_argument('--verdict', choices=['pending', 'supported', 'refuted', 'invalidated'])
-    parser.add_argument('--adopt', action='store_true')
-    parser.add_argument('--evidence-file')
-    parser.add_argument('--workers', type=int, default=2)
-    parser.add_argument('--lease', type=float, default=30)
-    parser.add_argument('--evidence')
-    parser.add_argument('--registry', help='Explicitly register and heartbeat this executor run')
-    parser.add_argument('--backup-config', help='Write a verified backup after this run closes its registration')
-    parser.add_argument('--service-mode', action='store_true', help='A reported normal stop requires attention rather than OS retry')
-    args = parser.parse_args()
+EPILOG = """\
+Every command prints JSON on stdout and diagnostics on stderr.
+
+Exit codes:
+  0  success; for `run`, every checkpoint is accepted
+  1  rejected input, or an I/O, schema or database error
+  2  `run` finished with at least one checkpoint not accepted
+
+Examples:
+  ocw-runtime init   --root /abs/new-runtime --plan /abs/plan.json
+  ocw-runtime run    --root /abs/runtime --workers 3 --registry /abs/registry
+  ocw-runtime status --root /abs/runtime
+  ocw-runtime decide-path --root /abs/runtime --path-id PATH-B --adopt \\
+      --actor operator --reason 'benchmark favours B' --expected-revision 42
+
+The plan contract is documented in docs/plan-contract.md and a runnable
+example lives in examples/quickstart.
+"""
+
+
+def build_parser():
+    """One subparser per command, so --help shows only the applicable flags."""
+    parser = argparse.ArgumentParser(prog='ocw-runtime', description=__doc__, epilog=EPILOG,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest='command', required=True, metavar='<command>')
+
+    def command(name, summary):
+        child = commands.add_parser(name, help=summary, description=summary,
+                                    formatter_class=argparse.RawDescriptionHelpFormatter)
+        child.add_argument('--root', required=True, metavar='DIR', help='Runtime root directory')
+        return child
+
+    def decision(child):
+        """Every authenticated write compares against the revision it read."""
+        child.add_argument('--actor', required=True, metavar='WHO', help='Who is recording this decision')
+        child.add_argument('--reason', required=True, metavar='TEXT', help='Why, kept in the event chain')
+        child.add_argument('--expected-revision', required=True, type=int, metavar='N',
+                           help='Revision this decision was made against; a stale value is refused')
+        return child
+
+    initialize = command('init', 'Create a new runtime root from a validated plan')
+    initialize.add_argument('--plan', required=True, metavar='FILE',
+                            help='Plan JSON. The root must not already exist')
+
+    run = command('run', 'Claim and execute ready checkpoints under fenced leases')
+    run.add_argument('--workers', type=int, default=2, metavar='N', help='Concurrent workers, 1..16 (default 2)')
+    run.add_argument('--lease', type=float, default=30, metavar='SECONDS',
+                     help='Lease duration, 0.1..300 (default 30)')
+    run.add_argument('--registry', metavar='DIR', help='Explicitly register and heartbeat this executor run')
+    run.add_argument('--backup-config', metavar='FILE',
+                     help='Write a verified backup after this run closes its registration')
+    run.add_argument('--service-mode', action='store_true',
+                     help='A reported normal stop requires attention rather than OS retry')
+
+    command('status', 'Print the current read model without mutating anything')
+    command('publish', 'Re-export the latest committed facts as an immutable generation')
+
+    restore = command('activate-restore', 'Release the execution hold on a restored runtime')
+    restore.add_argument('--evidence', required=True, metavar='TEXT',
+                         help='Free-text record of what was verified before activating')
+
+    decide = decision(command('decide-path', 'Adopt a path or record a verdict about one'))
+    decide.add_argument('--path-id', required=True, metavar='ID', help='Path to decide on')
+    decide.add_argument('--adopt', action='store_true',
+                        help='Select this path. Independent of --verdict; invalidates dependent checkpoints')
+    decide.add_argument('--verdict', choices=['pending', 'supported', 'refuted', 'invalidated'],
+                        help='Conclusion about the path. Requires --evidence-file')
+    decide.add_argument('--evidence-file', metavar='FILE',
+                        help='JSON evidence for --verdict. Not the same flag as activate-restore --evidence')
+
+    invalidate = decision(command('invalidate-checkpoint', 'Revoke a checkpoint and its dependents'))
+    invalidate.add_argument('--checkpoint-id', required=True, metavar='ID', help='Checkpoint to revoke')
+
+    return parser
+
+
+@contextmanager
+def executor_registration(root, registry):
+    """Announce this run in the registry, heartbeat while it works, then close.
+
+    Registry metadata is never execution authority, so a heartbeat failure is
+    reported and the run continues: the SQLite lease is what actually guards
+    writes. Closing on the way out is what stops a finished run from looking
+    like a live worker.
+    """
+    directory = Path(registry).expanduser().resolve()
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    registration = register(argparse.Namespace(source=root, session='executor', id=None, instance=None,
+                                               new_instance=True, pid=os.getpid(), label=None), directory)
+    identity = {'id': registration['registrationId'], 'instance': registration['instanceId']}
+    done = threading.Event()
+
+    def beat():
+        sequence = 0
+        while not done.is_set():
+            sequence += 1
+            try:
+                update(argparse.Namespace(command='heartbeat', seq=sequence, **identity), directory)
+            except Exception as error:
+                print('Registry heartbeat unavailable: ' + str(error), file=sys.stderr)
+            done.wait(5)
+
+    thread = threading.Thread(target=beat, daemon=True)
+    thread.start()
     try:
-        runtime = Runtime.initialize(args.root, json.loads(Path(args.plan).read_text())) if args.command == 'init' else Runtime(args.root)
-        if args.command == 'decide-path':
-            result = runtime.decide_path(args.path_id, actor=args.actor, reason=args.reason, expected_revision=args.expected_revision, verdict=args.verdict, adopt=args.adopt, evidence=json.loads(Path(args.evidence_file).read_text()) if args.evidence_file else None)
-            print(json.dumps(result)); return 0
-        if args.command == 'invalidate-checkpoint':
-            result = runtime.invalidate_checkpoint(args.checkpoint_id, actor=args.actor, reason=args.reason, expected_revision=args.expected_revision)
-            print(json.dumps(result)); return 0
-        done = threading.Event()
-        registration = None
-        if args.command == 'run' and args.registry:
-            registry = Path(args.registry).expanduser().resolve()
-            registry.mkdir(parents=True, exist_ok=True, mode=0o700)
-            registration = register(argparse.Namespace(source=args.root, session='executor', id=None, instance=None,
-                                                       new_instance=True, pid=os.getpid(), label=None), registry)
-            def beat():
-                sequence = 0
-                while not done.is_set():
-                    sequence += 1
-                    try:
-                        update(argparse.Namespace(command='heartbeat', id=registration['registrationId'], instance=registration['instanceId'], seq=sequence), registry)
-                    except Exception as error:
-                        print('Registry heartbeat unavailable: ' + str(error), file=sys.stderr)
-                    done.wait(5)
-            thread = threading.Thread(target=beat, daemon=True)
-            thread.start()
+        yield registration
+    finally:
+        done.set()
+        thread.join()
         try:
-            result = run_workers(runtime, args.workers, args.lease) if args.command == 'run' else runtime.publish() if args.command == 'publish' else runtime.activate_restore(args.evidence) if args.command == 'activate-restore' else runtime.status()
-        finally:
-            done.set()
-            if registration:
-                thread.join()
-                try:
-                    update(argparse.Namespace(command='close', id=registration['registrationId'], instance=registration['instanceId']), registry)
-                except ValueError:
-                    pass
+            update(argparse.Namespace(command='close', **identity), directory)
+        except ValueError:
+            pass  # Already closed or superseded; nothing left to release.
+
+
+def execute(runtime, args):
+    """Run one command and return the JSON-serializable result to print."""
+    if args.command == 'run':
+        return run_workers(runtime, args.workers, args.lease)
+    if args.command == 'publish':
+        return runtime.publish()
+    if args.command == 'activate-restore':
+        return runtime.activate_restore(args.evidence)
+    return runtime.status()  # `init` and `status` both report the read model.
+
+
+def main():
+    args = build_parser().parse_args()
+    try:
+        if args.command == 'init':
+            runtime = Runtime.initialize(args.root, json.loads(Path(args.plan).read_text()))
+        else:
+            runtime = Runtime(args.root)
+
+        if args.command == 'decide-path':
+            evidence = json.loads(Path(args.evidence_file).read_text()) if args.evidence_file else None
+            print(json.dumps(runtime.decide_path(args.path_id, actor=args.actor, reason=args.reason,
+                                                 expected_revision=args.expected_revision,
+                                                 verdict=args.verdict, adopt=args.adopt, evidence=evidence)))
+            return 0
+        if args.command == 'invalidate-checkpoint':
+            print(json.dumps(runtime.invalidate_checkpoint(args.checkpoint_id, actor=args.actor,
+                                                           reason=args.reason,
+                                                           expected_revision=args.expected_revision)))
+            return 0
+
+        registry = getattr(args, 'registry', None)
+        with executor_registration(args.root, registry) if registry else nullcontext():
+            result = execute(runtime, args)
+
         backup_failed = False
         if args.command == 'run' and args.backup_config:
             # Imported here, not at module scope: ocw_backup imports this module
