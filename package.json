@@ -1,16 +1,42 @@
 {
-  "name": "ocw-workflow-console",
+  "name": "ocw-harness",
+  "version": "0.2.0",
   "private": true,
-  "version": "0.1.0",
+  "description": "Runtime-bound checkpoint paths UI, concurrent local execution and verified recovery",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wcboy/ocw-harness.git"
+  },
+  "homepage": "https://github.com/wcboy/ocw-harness#readme",
+  "bugs": {
+    "url": "https://github.com/wcboy/ocw-harness/issues"
+  },
   "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "exports": {
+    "./projection": "./scripts/workflow-projection.mjs",
+    "./native-graph": "./scripts/native-graph.mjs",
+    "./runtime-state": "./scripts/runtime-state.mjs",
+    "./registry": "./scripts/harness-registry.mjs",
+    "./source-cache": "./scripts/source-cache.mjs",
+    "./snapshot-store": "./scripts/snapshot-store.mjs",
+    "./sse-writer": "./scripts/sse-writer.mjs",
+    "./managed-source": "./scripts/managed-source.mjs",
+    "./ui-release": "./scripts/ui-release.mjs"
+  },
   "scripts": {
     "dev": "node server.mjs --dev",
     "build": "vite build",
     "start": "node server.mjs",
-    "test": "node --test scripts/native-graph.test.mjs scripts/ui-release.test.mjs scripts/graph-layout.test.mjs scripts/harness-registry.test.mjs scripts/workflow-projection.test.mjs scripts/runtime-resilience.test.mjs && python3 -m unittest discover -s scripts -p 'test_ocw*.py' -v",
+    "test": "npm run test:node && npm run test:python",
+    "test:node": "node --test tests/*.test.mjs",
+    "test:python": "PYTHONPATH=scripts python3 -m unittest discover -s tests -p 'test_ocw*.py' -v",
     "typecheck": "tsc --noEmit",
-    "check": "npm test && npm run typecheck && npm run build",
-    "e2e": "npm run build && node --test --test-concurrency=1 scripts/e2e-console.mjs",
+    "check": "npm run build && npm test && npm run typecheck",
+    "e2e": "npm run build && PYTHONPATH=scripts node --test --test-concurrency=1 tests/e2e-console.mjs",
     "ensure-ui": "node scripts/ensure-ui.mjs"
   },
   "dependencies": {

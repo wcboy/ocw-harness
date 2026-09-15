@@ -7,7 +7,7 @@ import {
   listRegistrations,
   registerHarness,
   updateRegistration,
-} from "./harness-registry.mjs";
+} from "../scripts/harness-registry.mjs";
 
 async function makeCanonicalSource(root, taskId) {
   const source = join(root, taskId);

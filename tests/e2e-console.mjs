@@ -19,7 +19,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { writeFixtureWorkflow } from "./e2e-fixture.mjs";
-import { registerHarness } from "./harness-registry.mjs";
+import { registerHarness } from "../scripts/harness-registry.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.env.OCW_E2E_PORT || 4321);
@@ -681,7 +681,7 @@ test("demo playback pauses, advances, recovers and replays without losing an ope
 test('native runtime drives mixed ALL groups, stable paths, independent evidence and invalidations', async context => {
   const world=await setupWorld(context),run=promisify(execFile);
   const root=join(world.root,'native');
-  const advance=action=>run('python3',['scripts/e2e-native.py',action,root],{cwd:appRoot});
+  const advance=action=>run('python3',['tests/e2e-native.py',action,root],{cwd:appRoot});
   await advance('seed');
   const registration=await registerHarness({source:root,sessionId:'native',registryDir:world.registryDir,processId:process.pid});
   const {page,consoleErrors}=await openPage(world.browser,`/?harness=${registration.registrationId}`);

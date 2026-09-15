@@ -39,13 +39,22 @@ opening a pull request.
 
 | Command | Covers | Needs |
 |---|---|---|
-| `node --test tests/<file>.test.mjs` | One Node module | — |
-| `python3 -m unittest tests.test_ocw_runtime` | Executor behavior | — |
+| `node --test tests/<file>.test.mjs` | One Node module | A current build for the supervisor test |
+| `npm run test:python` | Executor and graph behavior | — |
 | `npm run typecheck` | `src/` types | — |
-| `npm run check` | All unit tests, typecheck and build | — |
+| `npm run check` | Build, all unit tests, typecheck | — |
 | `npm run e2e` | Real browser behavior | `npx playwright install chromium` |
 
 `npm run check` is what CI runs first, followed by `npm run e2e`. Both must pass.
+
+`check` builds before it tests, deliberately. The supervisor test starts a real
+supervisor, which synchronously runs `ensure-ui` before the adapter; against a
+stale `dist/` that rebuild lands inside the test's polling assertion and times
+out. If you run a Node test file directly after editing anything in the source
+digest, run `npm run ensure-ui` first.
+
+Python tests need `scripts/` importable. `npm run test:python` sets `PYTHONPATH`;
+if you invoke `unittest` yourself, either do the same or `pip install -e .`.
 
 Use `OCW_BUILD_DIR=/absolute/isolated/dir` when verifying locally if you have a
 desktop launcher or login service serving a bundle you do not want overwritten.

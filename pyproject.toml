@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ocw-harness"
+version = "0.2.0"
+description = "Fenced local checkpoint execution with a verified generation export"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The OCW Harness Authors" }]
+keywords = ["checkpoint", "workflow", "executor", "sqlite", "idempotency"]
+classifiers = [
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Build Tools",
+]
+# The executor is standard library only, on purpose: a restored host needs
+# nothing installed to resume pending work.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/wcboy/ocw-harness"
+Documentation = "https://github.com/wcboy/ocw-harness#readme"
+Issues = "https://github.com/wcboy/ocw-harness/issues"
+
+[project.scripts]
+ocw-runtime = "ocw_runtime:cli"
+ocw-backup = "ocw_backup:main"
+ocw-registry = "harness_registry:main"
+
+[tool.setuptools]
+# scripts/ is the Python source root. The modules stay there rather than moving
+# into a package directory because init.sh, manage-service.py, the Node registry
+# wrapper and every installed launchd service address them by that path.
+package-dir = { "" = "scripts" }
+py-modules = [
+  "ocw_runtime",
+  "ocw_graph",
+  "ocw_backup",
+  "harness_registry",
+  "scaffold_console",
+]

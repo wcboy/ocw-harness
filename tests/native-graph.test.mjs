@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validateNativeGraph, checkpointState, aggregateStates, nativePath, validateNativeEvidence } from './native-graph.mjs';
+import { validateNativeGraph, checkpointState, aggregateStates, nativePath, validateNativeEvidence } from '../scripts/native-graph.mjs';
 const fixture = () => ({schema_version:'ocw-graph-2', goal_tree:[{l1_id:'g1'}],coupling_bundles:[{bundle_id:'g1',goal_id:'g1',units:['cp1','cp2'],policy:'all'}],checkpoints:[{checkpoint_id:'cp1',l1_id:'g1',execution_status:'accepted',acceptance_policy:'legacy_command_receipt'},{checkpoint_id:'cp2',l1_id:'g1',execution_status:'running',acceptance_policy:'legacy_command_receipt'}],paths:[{path_id:'p1',edge_id:'e1',verdict:'pending',selected:true}],dependency_dag:{edges:[{edge_id:'e1',from:['ROOT'],to:'g1',prerequisite_policy:'all',selection:{path_id:'p1'}}],topological_layers:[['e1']]}});
 test('native graph preserves independently accepted and running members', () => {
  const graph=fixture();assert.equal(validateNativeGraph(graph),true);

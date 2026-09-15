@@ -22,6 +22,7 @@ import threading
 import time
 from uuid import uuid4
 from ocw_graph import encode as encoded, graph_plan, project_graph
+from harness_registry import register, update
 
 
 def stamp():
@@ -647,7 +648,6 @@ def main():
         done = threading.Event()
         registration = None
         if args.command == 'run' and args.registry:
-            from harness_registry import register, update
             registry = Path(args.registry).expanduser().resolve()
             registry.mkdir(parents=True, exist_ok=True, mode=0o700)
             registration = register(argparse.Namespace(source=args.root, session='executor', id=None, instance=None,
@@ -675,6 +675,8 @@ def main():
                     pass
         backup_failed = False
         if args.command == 'run' and args.backup_config:
+            # Imported here, not at module scope: ocw_backup imports this module
+            # for the SQLite online-backup helpers, so a top-level import cycles.
             from ocw_backup import create
             runtime.record_backup({'status': 'running', 'startedAt': stamp()})
             try:
@@ -697,9 +699,15 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+def cli():
+    """Console entry point. Wraps main() with the service-mode exit remap so a
+    supervisor treats "stopped for attention" as a normal stop, not a crash."""
     outcome = main()
     if '--service-mode' in sys.argv and outcome:
         print(f'OCW service stopped for attention (executor result {outcome}); inspect checkpoint/operation state before restart.', file=sys.stderr)
         outcome = 0
-    sys.exit(outcome)
+    return outcome
+
+
+if __name__ == '__main__':
+    sys.exit(cli())

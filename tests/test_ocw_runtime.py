@@ -17,12 +17,15 @@ from unittest.mock import patch
 from ocw_runtime import Runtime, FileDelivery, encoded, run_workers, bounded_command
 from ocw_backup import create, restore, verify
 
-HERE = Path(__file__).resolve().parent
+# Subprocesses in these tests either run scripts/ocw_runtime.py by path or
+# `python3 -c 'from ocw_runtime import ...'`, so they need the production source
+# directory, not this test directory.
+SCRIPTS = Path(__file__).resolve().parent.parent / 'scripts'
 
 
 class CommandBoundsTests(unittest.TestCase):
     def command(self, code, **options):
-        return bounded_command([sys.executable, '-c', code], cwd=HERE, env=os.environ,
+        return bounded_command([sys.executable, '-c', code], cwd=SCRIPTS, env=os.environ,
                                interval=.01, error='execution stopped', **options)
 
     def test_output_and_exit_status_are_preserved_including_nonzero_exit(self):
@@ -95,7 +98,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_dead_executor_takeover_fences_original_commit_and_heartbeat(self):
         code = "from ocw_runtime import Runtime; import json,sys,time; r=Runtime(sys.argv[1]); print(json.dumps(r.claim('old',.2)),flush=True); time.sleep(30)"
-        child = subprocess.Popen([sys.executable, '-c', code, str(self.runtime.root)], cwd=HERE, stdout=subprocess.PIPE, text=True)
+        child = subprocess.Popen([sys.executable, '-c', code, str(self.runtime.root)], cwd=SCRIPTS, stdout=subprocess.PIPE, text=True)
         token = json.loads(child.stdout.readline())
         child.kill()
         child.wait()
@@ -150,7 +153,7 @@ def die(path, data):
 m.atomic=die
 r.finish(t,{'ok':True})
 '''
-        result = subprocess.run([sys.executable, '-c', code, str(self.runtime.root)], cwd=HERE)
+        result = subprocess.run([sys.executable, '-c', code, str(self.runtime.root)], cwd=SCRIPTS)
         self.assertEqual(result.returncode, 9)
         self.assertEqual((self.runtime.root / 'ocw-head.json').read_bytes(), (self.runtime.root / 'before-crash-head.json').read_bytes())
         self.assertEqual(self.runtime.status()['checkpoints'][0]['status'], 'accepted')
@@ -168,7 +171,7 @@ class Crash(FileDelivery):
 k=r.prepare_operation(t,'result',{'kind':'file','filename':'CHECK-A.txt','content':'saved-original-output\\n','exitCode':0})
 r.dispatch(t,k,Crash(sys.argv[2]))
 '''
-        result = subprocess.run([sys.executable, '-c', code, str(self.runtime.root), self.plan['delivery_dir']], cwd=HERE)
+        result = subprocess.run([sys.executable, '-c', code, str(self.runtime.root), self.plan['delivery_dir']], cwd=SCRIPTS)
         self.assertEqual(result.returncode, 8)
         file = self.root / 'delivery/CHECK-A.txt'
         inode = file.stat().st_ino
@@ -286,8 +289,8 @@ r.dispatch(t,k,Crash(sys.argv[2]))
         launcher.chmod(0o755)
         frontend = self.root / 'frontend';frontend.mkdir()
         (frontend/'source-project').write_text(str(console)+'\n')
-        entry = HERE.parent/'public/start.command'
-        if not entry.is_file(): entry = HERE.parent/'assets/start.command'
+        entry = SCRIPTS.parent/'public/start.command'
+        if not entry.is_file(): entry = SCRIPTS.parent/'assets/start.command'
         (frontend/'start.command').write_bytes(entry.read_bytes())
         archive = create({'items':[{'name':'console','path':str(console)},{'name':'frontend','path':str(frontend)}]},self.root/'backups')
         destination=self.root/'restored-ui';restore(archive['archive'],destination)
@@ -368,7 +371,7 @@ r.dispatch(t,k,Crash(sys.argv[2]))
         plan['checkpoints'] = [dict(self.step('FAIL'), max_attempts=1, argv=[sys.executable, '-c', 'raise SystemExit(7)'])]
         root = self.root / 'failing-service'
         Runtime.initialize(root, plan)
-        base = [sys.executable, str(HERE / 'ocw_runtime.py'), 'run', '--root', str(root)]
+        base = [sys.executable, str(SCRIPTS / 'ocw_runtime.py'), 'run', '--root', str(root)]
         service = subprocess.run(base + ['--service-mode'], capture_output=True, text=True)
         self.assertEqual(service.returncode, 0)
         self.assertEqual(json.loads(service.stdout)['checkpoints'][0]['status'], 'failed')
@@ -379,7 +382,7 @@ r.dispatch(t,k,Crash(sys.argv[2]))
     def test_failed_backup_is_persisted_separately_from_accepted_work(self):
         config = self.root / 'backup-config.json'
         config.write_text(json.dumps({'required_mount': str(self.root / 'missing-disk'), 'destination': str(self.root / 'missing-disk/backups'), 'items': []}))
-        process = subprocess.run([sys.executable, str(HERE / 'ocw_runtime.py'), 'run', '--root', str(self.runtime.root), '--backup-config', str(config)], capture_output=True, text=True)
+        process = subprocess.run([sys.executable, str(SCRIPTS / 'ocw_runtime.py'), 'run', '--root', str(self.runtime.root), '--backup-config', str(config)], capture_output=True, text=True)
         self.assertEqual(process.returncode, 1)
         data = json.loads(process.stdout)
         self.assertTrue(all(c['status'] == 'accepted' for c in data['checkpoints']))
