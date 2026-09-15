@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isEntrypoint } from './entrypoint.mjs';
 export const appRoot = fileURLToPath(new URL('..', import.meta.url));
 export async function releaseIdentity(root = appRoot) {
   const release = JSON.parse(await readFile(join(root, 'ui-release.json'), 'utf8'));
@@ -30,4 +31,4 @@ export async function buildStatus(dist, expected) {
   }
   catch { return {status:'missing', designVersion:expected.designVersion}; }
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) console.log(JSON.stringify(await releaseIdentity(process.argv[2] || appRoot)));
+if (isEntrypoint(import.meta.url)) console.log(JSON.stringify(await releaseIdentity(process.argv[2] || appRoot)));
