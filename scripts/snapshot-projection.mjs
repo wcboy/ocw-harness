@@ -331,7 +331,17 @@ export function roleLabel(rawRole, phase) {
  * carries `checkpoint_ids` and `role`, so the specs are what make checkpoint-level
  * ownership real rather than inferred from the enclosing edge.
  */
-export function normalizeAgentActivity(state, assignmentSpecs = new Map()) {
+/**
+ * Index assignments by edge, checkpoint and path, and decide which are live.
+ *
+ * `native` says the source is an `ocw-graph-2` graph, whose assignments carry
+ * precise checkpoint and path ids. It is a parameter rather than something the
+ * caller attaches afterwards because `resolveWorker` reads it to decide whether
+ * an edge-level owner may be inherited: defaulting it silently selects the
+ * legacy branch, which is the wrong answer for a native source rather than a
+ * neutral one.
+ */
+export function normalizeAgentActivity(state, assignmentSpecs = new Map(), native = false) {
   const rawList = Array.isArray(state.active_assignments) ? state.active_assignments : [];
   const assignmentsById = new Map(
     (Array.isArray(state.assignments) ? state.assignments : []).map((a) => [a.assignment_id, a]),
@@ -404,6 +414,7 @@ export function normalizeAgentActivity(state, assignmentSpecs = new Map()) {
     byEdge,
     byCheckpoint,
     byPath,
+    native,
   };
 }
 

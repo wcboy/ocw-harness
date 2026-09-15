@@ -141,23 +141,30 @@ test('worker resolution reports the scope it matched and flags inheritance', () 
 });
 
 test('a native graph refuses an edge owner that does not cover the node', () => {
-  // `agentActivity.native` is set by the caller after normalizeAgentActivity
-  // returns -- server.mjs does it in buildSnapshot. Without it the legacy
-  // branch runs, which attaches an edge owner to a checkpoint it does not
-  // claim and only marks it inherited. Any other caller of this module has to
-  // set the same flag, so both branches are pinned here.
+  // A native source's assignments carry precise checkpoint and path ids, so an
+  // edge owner that does not list this checkpoint is not its owner at all. A
+  // legacy source has no such precision, so the same owner is reported but
+  // labelled inherited. Both branches are pinned because the difference is
+  // decided by one argument.
   const state = { phase: 'implementing', assignments: [
     { assignment_id: 'ASG-R2-EDGE', status: 'executing', edge_id: 'EDGE-1', checkpoint_ids: ['CP-OWNED'] },
   ] };
+  const elsewhere = { edgeId: 'EDGE-1', checkpointId: 'CP-ELSEWHERE' };
 
-  const legacy = normalizeAgentActivity(state);
-  const inherited = resolveWorker(legacy, { edgeId: 'EDGE-1', checkpointId: 'CP-ELSEWHERE' });
+  const legacy = normalizeAgentActivity(state, new Map(), false);
+  assert.equal(legacy.native, false);
+  const inherited = resolveWorker(legacy, elsewhere);
   assert.equal(inherited.scope, 'edge');
   assert.equal(inherited.inherited, true, 'legacy sources show the owner as inherited');
 
-  const native = Object.assign(normalizeAgentActivity(state), { native: true });
-  assert.equal(resolveWorker(native, { edgeId: 'EDGE-1', checkpointId: 'CP-ELSEWHERE' }), null,
+  const native = normalizeAgentActivity(state, new Map(), true);
+  assert.equal(native.native, true, 'the flag travels on the object the caller is handed');
+  assert.equal(resolveWorker(native, elsewhere), null,
     'a native graph has precise checkpoint ids, so a non-covering edge owner is not reported at all');
+
+  // Omitting the argument must not masquerade as a native source.
+  assert.equal(normalizeAgentActivity(state).native, false);
+  assert.equal(resolveWorker(normalizeAgentActivity(state), elsewhere).inherited, true);
 });
 
 test('the event chain reports gaps rather than smoothing them over', () => {

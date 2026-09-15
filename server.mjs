@@ -441,8 +441,7 @@ async function buildSnapshot(registration) {
   const expectedProductDigest = result.product_sha256 || null;
   const mirror = result.write_set?.delivery_mirror || null;
   const mirrorDigest = mirror?.ref ? await fileDigest(mirror.ref).catch(() => null) : null;
-  const agentActivity = normalizeAgentActivity(state, assignmentSpecs);
-  agentActivity.native = native;
+  const agentActivity = normalizeAgentActivity(state, assignmentSpecs, native);
   const checkpointTree = normalizeCheckpointTree(graph, acceptedEdges, activePhase, agentActivity, topology, overlay);
   const routeFlow = normalizeRouteFlow(state, decision, result, routeBodies);
   const journey = normalizeJourney(
