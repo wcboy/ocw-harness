@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile, readdir } from "node:fs/promises";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 export const REGISTRY_SCHEMA = "ocw-harness-registry-1";
 export const REGISTRATION_SCHEMA = "ocw-harness-registration-1";
@@ -94,7 +95,7 @@ export async function listRegistrations(registryDir = defaultRegistryDir()) {
   return { schemaVersion: REGISTRY_SCHEMA, registryDir: directory, registrations, errors };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isEntrypoint(import.meta.url)) {
   runFile(process.env.OCW_PYTHON || "python3", [writer, ...process.argv.slice(2)], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 })
     .then(({ stdout }) => process.stdout.write(stdout))
     .catch((error) => { process.stderr.write(error.stderr || `${error.message}\n`); process.exitCode = 1; });
