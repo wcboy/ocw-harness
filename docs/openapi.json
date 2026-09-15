@@ -1,0 +1,721 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OCW Harness read-only adapter",
+    "version": "ocw-console-4",
+    "summary": "Observes canonical checkpoint state. No route mutates it.",
+    "description": "Prose guide: docs/api.md. Field-level types: src/types.ts. This document declares top-level and first-nested response keys; tests/api-contract.test.mjs checks a live server against it, so a new or removed field fails the suite until this file is updated.",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:{port}",
+      "description": "Loopback only",
+      "variables": {
+        "port": {
+          "default": "4173"
+        }
+      }
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Binding, build state and registry totals",
+        "parameters": [
+          {
+            "name": "launch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{8,80}$"
+            },
+            "description": "Launch token. A malformed value is ignored, not rejected."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Adapter is bound and answering",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Registry could not be listed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Anything but GET or HEAD. The adapter never mutates canonical state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodNotAllowed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registry": {
+      "get": {
+        "summary": "Every registration in the active registry",
+        "responses": {
+          "200": {
+            "description": "Directory view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrySnapshot"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Registry unreadable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Anything but GET or HEAD. The adapter never mutates canonical state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodNotAllowed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/snapshot": {
+      "get": {
+        "summary": "Full projection for one registration",
+        "parameters": [
+          {
+            "name": "harness",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "registrationId from /api/registry"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowSnapshot"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Harness missing or ambiguous",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryRequiredError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source unreadable or projection failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Anything but GET or HEAD. The adapter never mutates canonical state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodNotAllowed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stream": {
+      "get": {
+        "summary": "Server-sent events. Complements, never replaces, the 1s poll.",
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "registry",
+                "snapshot"
+              ]
+            },
+            "description": "registry selects the directory stream; any other value means the snapshot stream."
+          },
+          {
+            "name": "harness",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "launch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream. Events: registry, snapshot, source-error. Heartbeat comments every 15s.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Anything but GET or HEAD. The adapter never mutates canonical state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodNotAllowed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/diagnostics": {
+      "get": {
+        "summary": "Cache and process counters. Explicitly not part of the UI contract.",
+        "responses": {
+          "200": {
+            "description": "Counters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Diagnostics"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Anything but GET or HEAD. The adapter never mutates canonical state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodNotAllowed"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "type": "object",
+        "description": "Returned for every path on any method but GET or HEAD, before routing.",
+        "required": [
+          "error",
+          "allow"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "allow": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "const": [
+              "GET",
+              "HEAD"
+            ]
+          }
+        }
+      },
+      "RegistryRequiredError": {
+        "type": "object",
+        "required": [
+          "error",
+          "registryRequired"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "registryRequired": {
+            "const": true
+          }
+        }
+      },
+      "HealthError": {
+        "type": "object",
+        "required": [
+          "ok",
+          "error"
+        ],
+        "properties": {
+          "ok": {
+            "const": false
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "ok",
+          "binding"
+        ],
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "binding": {
+            "$ref": "#/components/schemas/Binding"
+          }
+        }
+      },
+      "Binding": {
+        "type": "object",
+        "description": "What this adapter is bound to. capabilities report what it refuses to do.",
+        "required": [
+          "bindingId",
+          "adapterVersion",
+          "ui",
+          "sourceDigest",
+          "required",
+          "status",
+          "startedAt",
+          "frontendUrl",
+          "registryMode",
+          "registryDir",
+          "connectedClients",
+          "frontendAttached",
+          "registryCount",
+          "taskCount",
+          "sessionCount",
+          "capabilities",
+          "activeHarnesses",
+          "launchAttached",
+          "launchClients",
+          "sourceRoot",
+          "taskId",
+          "revision"
+        ],
+        "properties": {
+          "bindingId": {
+            "type": "string"
+          },
+          "adapterVersion": {
+            "type": "string"
+          },
+          "ui": {
+            "type": "string"
+          },
+          "sourceDigest": {
+            "type": "string"
+          },
+          "required": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "stale",
+              "incomplete",
+              "corrupt",
+              "missing"
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "frontendUrl": {
+            "type": "string"
+          },
+          "registryMode": {
+            "type": "string"
+          },
+          "registryDir": {
+            "type": "string"
+          },
+          "connectedClients": {
+            "type": "integer"
+          },
+          "frontendAttached": {
+            "type": "boolean"
+          },
+          "registryCount": {
+            "type": "integer"
+          },
+          "taskCount": {
+            "type": "integer"
+          },
+          "sessionCount": {
+            "type": "integer"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/Capabilities"
+          },
+          "activeHarnesses": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "launchAttached": {
+            "type": "boolean"
+          },
+          "launchClients": {
+            "type": "integer"
+          },
+          "sourceRoot": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taskId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": "null",
+            "description": "Always null here; a revision is per-snapshot, not per-binding."
+          }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "required": [
+          "sourceRecovery",
+          "executorTakeover",
+          "hostBackup",
+          "canonicalWrites"
+        ],
+        "properties": {
+          "sourceRecovery": {
+            "type": [
+              "boolean",
+              "string"
+            ]
+          },
+          "executorTakeover": {
+            "type": [
+              "boolean",
+              "string"
+            ]
+          },
+          "hostBackup": {
+            "type": [
+              "boolean",
+              "string"
+            ]
+          },
+          "canonicalWrites": {
+            "type": [
+              "boolean",
+              "string"
+            ]
+          }
+        }
+      },
+      "RegistrySnapshot": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "generatedAt",
+          "revision",
+          "runtime",
+          "counts",
+          "registrations",
+          "errors"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": "ocw-harness-registry-1"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revision": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "runtime": {
+            "type": "object"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/RegistryCounts"
+          },
+          "registrations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "description": "A record that fails to parse degrades one row, not the response.",
+            "items": {
+              "type": "object",
+              "required": [
+                "file",
+                "message"
+              ],
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "RegistryCounts": {
+        "type": "object",
+        "required": [
+          "registrations",
+          "tasks",
+          "sessions",
+          "working",
+          "active",
+          "unavailable",
+          "workingAgents",
+          "activeAssignments"
+        ],
+        "additionalProperties": {
+          "type": "integer"
+        }
+      },
+      "WorkflowSnapshot": {
+        "type": "object",
+        "description": "Leaf types are in src/types.ts (WorkflowSnapshot). Every status carries a statusSource naming its provenance.",
+        "required": [
+          "generatedAt",
+          "sourceRoot",
+          "execution",
+          "runtime",
+          "task",
+          "phases",
+          "groups",
+          "checkpointTree",
+          "routeFlow",
+          "journey",
+          "agentActivity",
+          "events",
+          "metrics",
+          "integrity",
+          "contentFingerprint",
+          "sourceStatus",
+          "sourceError",
+          "persistenceError",
+          "verifiedAt"
+        ],
+        "properties": {
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verifiedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "sourceRoot": {
+            "type": "string"
+          },
+          "contentFingerprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceStatus": {
+            "type": "string"
+          },
+          "sourceError": {
+            "type": [
+              "string",
+              "object",
+              "null"
+            ]
+          },
+          "persistenceError": {
+            "type": [
+              "string",
+              "object",
+              "null"
+            ]
+          },
+          "execution": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Executor summary for a managed root, else null."
+          },
+          "runtime": {
+            "type": "object"
+          },
+          "task": {
+            "type": "object"
+          },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The R1-R5 protocol strip."
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "checkpointTree": {
+            "type": "object"
+          },
+          "routeFlow": {
+            "type": "object"
+          },
+          "journey": {
+            "type": "object"
+          },
+          "agentActivity": {
+            "$ref": "#/components/schemas/AgentActivity"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "metrics": {
+            "type": "object"
+          },
+          "integrity": {
+            "type": "object"
+          }
+        }
+      },
+      "AgentActivity": {
+        "type": "object",
+        "description": "Assignment history is not liveness. An expired lease is not working.",
+        "required": [
+          "assignments",
+          "workingCount",
+          "activeAssignmentCount",
+          "unverifiedAssignmentCount"
+        ],
+        "properties": {
+          "assignments": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "workingCount": {
+            "type": "integer"
+          },
+          "activeAssignmentCount": {
+            "type": "integer"
+          },
+          "unverifiedAssignmentCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "Diagnostics": {
+        "type": "object",
+        "required": [
+          "digestComputations",
+          "snapshotBuilds",
+          "digestEntries",
+          "sourceCacheEntries",
+          "activeSourceReads",
+          "queuedSourceReads",
+          "connectedClients",
+          "uptimeMs"
+        ],
+        "additionalProperties": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}
