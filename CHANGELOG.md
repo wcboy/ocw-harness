@@ -78,6 +78,15 @@ it. No runtime behaviour, wire format or on-disk contract changed.
   change — verified against two live launchd services, which `service status`
   still resolves under their original labels.
 
+### Fixed
+
+- `scripts/harness-registry.mjs` and `scripts/ui-release.mjs` did nothing —
+  exiting 0 with no output — when invoked through a path containing a symlink,
+  which on macOS includes anything under `/tmp`. Both main-module guards
+  compared a `path.resolve`d `argv[1]` against `import.meta.url`, and `resolve`
+  does not follow symlinks. Now share `isEntrypoint`, which compares real
+  paths.
+
 ### Removed
 
 - `public/README.md`, a Chinese duplicate of the root README that was copied
