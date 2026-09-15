@@ -15,12 +15,13 @@ def scaffold(reference, destination):
         if not (reference / required).is_file():
             raise ValueError('incomplete latest UI source: ' + required)
     destination.mkdir(parents=True, exist_ok=False)
-    for directory in ['src','scripts','desktop','public','docs','.github']:
+    for directory in ['src','scripts','tests','desktop','public','docs','examples','.github']:
         if (reference / directory).is_dir():
             shutil.copytree(reference / directory, destination / directory, ignore=shutil.ignore_patterns('__pycache__','.DS_Store','*.log'))
     for name in ['server.mjs','init.sh','index.html','package.json','package-lock.json','tsconfig.json','tsconfig.node.json','vite.config.ts','ui-release.json','harness-ui.json']:
         shutil.copy2(reference / name, destination / name)
-    for name in ['README.md', 'SKILL.md', 'RUNTIME-RELIABILITY.md', '.gitignore']:
+    # The license must travel with the copied source; the rest is convenience.
+    for name in ['LICENSE', 'NOTICE', 'README.md', 'SKILL.md', 'RUNTIME-RELIABILITY.md', 'CONTRIBUTING.md', 'pyproject.toml', '.gitignore', '.editorconfig', '.nvmrc']:
         if (reference / name).is_file():
             shutil.copy2(reference / name, destination / name)
     config = json.loads((destination / 'harness-ui.json').read_text())

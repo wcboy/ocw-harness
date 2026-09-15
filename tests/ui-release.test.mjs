@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { releaseIdentity, buildStatus } from './ui-release.mjs';
+import { releaseIdentity, buildStatus } from '../scripts/ui-release.mjs';
 import {createHash} from 'node:crypto';
 test('release identity changes with renderer code and rejects stale builds',async t=>{
  const root=await mkdtemp(join(tmpdir(),'ocw-ui-release-'));t.after(()=>rm(root,{recursive:true,force:true}));
@@ -23,11 +23,11 @@ test('release identity changes with renderer code and rejects stale builds',asyn
 });
 
 test('scaffold copies the current renderer and portable entries, without task data',async t=>{
- const {execFile} = await import('node:child_process');const {promisify} = await import('node:util');const {appRoot}=await import('./ui-release.mjs');
+ const {execFile} = await import('node:child_process');const {promisify} = await import('node:util');const {appRoot}=await import('../scripts/ui-release.mjs');
  const root=await mkdtemp(join(tmpdir(),'ocw-scaffold-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const target=join(root,'console');
  await promisify(execFile)('python3',[join(appRoot,'scripts/scaffold_console.py'),'--reference',appRoot,'--destination',target]);
- for (const name of ['server.mjs','src/components/OrthogonalJourney.tsx','src/graph-layout.ts','scripts/ocw_graph.py','scripts/run-bound-ui.sh','README.md','SKILL.md','RUNTIME-RELIABILITY.md','.gitignore','.github/workflows/check.yml']) assert.equal(await readFile(join(target,name),'utf8'),await readFile(join(appRoot,name),'utf8'));
+ for (const name of ['server.mjs','src/components/OrthogonalJourney.tsx','src/graph-layout.ts','scripts/ocw_graph.py','scripts/run-bound-ui.sh','README.md','SKILL.md','RUNTIME-RELIABILITY.md','.gitignore','.github/workflows/check.yml','LICENSE','NOTICE','pyproject.toml','tests/test_ocw_runtime.py','examples/quickstart/make_plan.py','docs/plan-contract.md']) assert.equal(await readFile(join(target,name),'utf8'),await readFile(join(appRoot,name),'utf8'));
  assert.equal(JSON.parse(await readFile(join(target,'harness-ui.json'),'utf8')).frontend_dir,'dist');
  assert.equal((await releaseIdentity(target)).designVersion,'checkpoint-paths-2');
  assert.doesNotMatch(await readFile(join(target,'public/start.command'),'utf8'),/\/Users\//);

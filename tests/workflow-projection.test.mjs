@@ -14,7 +14,7 @@ import {
   parsePathMemo,
   parseRouteMarkdown,
   resolveWorkflowRef,
-} from "./workflow-projection.mjs";
+} from "../scripts/workflow-projection.mjs";
 
 const ROOT = "/tmp/ocw-fixture-root";
 
