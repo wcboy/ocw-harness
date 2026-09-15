@@ -43,8 +43,9 @@ and is empty until you register one.
 ./examples/quickstart/run.sh /tmp/ocw-demo
 ```
 
-That builds a four-checkpoint plan across three groups with two competing
-paths, executes it, and prints the command to point the console at the result.
+That builds a three-checkpoint plan across two groups, with two competing paths
+into the second group, executes it, and prints the command to point the console
+at the result.
 [examples/README.md](examples/README.md) walks through what each file does and
 shows how to break a checkpoint on purpose to watch the failure surface.
 

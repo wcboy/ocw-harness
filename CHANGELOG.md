@@ -27,9 +27,10 @@ it. No runtime behaviour, wire format or on-disk contract changed.
 - `tests/api-contract.test.mjs`: checks a live adapter against
   `docs/openapi.json` in both directions, so a response field cannot be added
     30|  or removed without failing the suite.
-- `examples/quickstart/`: a plan that actually runs — four checkpoints, three
-  groups, two competing paths — plus `run.sh` that executes it end to end, and
-  a walkthrough that shows how to break a checkpoint on purpose.
+- `examples/quickstart/`: a plan that actually runs — three checkpoints, two
+  groups, two competing paths into the second — plus `run.sh` that executes it
+  end to end, and a walkthrough that shows how to break a checkpoint on
+  purpose.
 - `pyproject.toml`: the Python side is now installable, with `ocw-runtime`,
   `ocw-backup` and `ocw-registry` console entry points. `Runtime` is a
   supported way to drive execution from your own scheduler.
