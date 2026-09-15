@@ -9,12 +9,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: npm ci
       - run: npm run check
+
+      # The advertised entry points are only real if they install and answer.
+      # Without this, pyproject.toml can rot without any test noticing.
+      - name: Python package installs and its entry points run
+        run: |
+          pip install -e .
+          ocw-runtime --help > /dev/null
+          ocw-backup --help > /dev/null
+          ocw-registry --help > /dev/null
+
+      # An example nobody runs is an example that stops working. This exits
+      # non-zero unless every checkpoint reaches accepted.
+      - name: Quickstart example runs end to end
+        run: ./examples/quickstart/run.sh "$RUNNER_TEMP/quickstart"
+
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e

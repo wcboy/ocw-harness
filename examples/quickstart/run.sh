@@ -60,3 +60,6 @@ otherwise the console reads your default one and shows nothing:
 
 Scratch directory (safe to delete): $scratch
 EOF
+
+# Propagate the run's own exit code so this is usable as a check, not just a demo.
+exit "$run_status"
