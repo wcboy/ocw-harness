@@ -1,5 +1,15 @@
 #!/usr/bin/env node
 
+/**
+ * Node client for the registry. Writes and reads are deliberately asymmetric.
+ *
+ * Every write shells out to harness_registry.py, which owns the OS locking that
+ * serializes an identity, so there is exactly one implementation of the write
+ * rules. Reads are implemented here instead, because the adapter reads the
+ * registry on every poll and a Python process per read would be the dominant
+ * cost of serving a snapshot. This is not duplication to be collapsed: the two
+ * paths are different operations with different contention.
+ */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
