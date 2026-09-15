@@ -21,7 +21,7 @@ def scaffold(reference, destination):
     for name in ['server.mjs','init.sh','index.html','package.json','package-lock.json','tsconfig.json','tsconfig.node.json','vite.config.ts','ui-release.json','harness-ui.json']:
         shutil.copy2(reference / name, destination / name)
     # The license must travel with the copied source; the rest is convenience.
-    for name in ['LICENSE', 'NOTICE', 'README.md', 'SKILL.md', 'RUNTIME-RELIABILITY.md', 'CONTRIBUTING.md', 'pyproject.toml', '.gitignore', '.editorconfig', '.nvmrc']:
+    for name in ['LICENSE', 'NOTICE', 'README.md', 'SKILL.md', 'RUNTIME-RELIABILITY.md', 'CONTRIBUTING.md', 'CHANGELOG.md', 'pyproject.toml', '.gitignore', '.editorconfig', '.nvmrc']:
         if (reference / name).is_file():
             shutil.copy2(reference / name, destination / name)
     config = json.loads((destination / 'harness-ui.json').read_text())

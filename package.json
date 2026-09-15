@@ -17,6 +17,7 @@
     "node": ">=22.12"
   },
   "exports": {
+    "./snapshot-projection": "./scripts/snapshot-projection.mjs",
     "./projection": "./scripts/workflow-projection.mjs",
     "./native-graph": "./scripts/native-graph.mjs",
     "./runtime-state": "./scripts/runtime-state.mjs",
