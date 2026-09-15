@@ -22,4 +22,6 @@ invents prose, and it never reads or writes these files inside a workflow root.
 ```
 
 `goals`, `edges` and `paths` accept either a bare string (treated as `label`) or an
-object with `label`, `shortLabel` and `summary`.
+object with `label`, `shortLabel` and `summary`. The example is deliberately not
+English: an overlay is display text in whatever language the task is run in,
+which is the reason it is separate from the canonical data.

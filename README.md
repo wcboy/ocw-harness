@@ -1,73 +1,179 @@
 # OCW Harness
 
-本地检查点执行器与实时路径图控制台。用分层虚线区域组织必须全部满足的检查点，用同一对端点之间的连线展示备选路径；点击后展开执行者、验收证据与历史尝试。
+Run a plan made of checkpoints, and watch it as a path graph.
 
-- 已采用：流动绿色实线；待定：虚线；证伪：红线与叉。
-- 多任务、多会话显式注册；SSE 推送与每秒只读刷新并用。
-- SQLite 租约、并发领取、过期执行者隔离、有限重试与交付对账。
-- 不可变快照、观察缓存、故障重启，以及校验后暂停恢复的备份。
-- 原生 `ocw-plan-2` 与历史 v1 / OCW 协议数据均可展示。当前设计由 [ui-release.json](ui-release.json) 声明。
+A checkpoint is one replay-safe local command plus a **separate** command that
+decides whether its output is acceptable. Checkpoints are grouped into layers
+that must all pass, and the alternative ways of getting from one layer to the
+next are drawn as competing paths between the same two nodes. Adopting a path
+is a decision you record, with a reason and evidence — not something the
+harness infers from a command exiting 0.
 
-## 运行与演示
+The point is that the console never shows you a green line that no oracle
+produced. Status is projected from an append-only SQLite log, every status
+carries the name of what produced it, and an expired worker lease reads as "not
+working" rather than "still working".
 
-需要 macOS 或 Linux、Node.js 22.12+、npm 与 Python 3.10+。Python 执行器仅使用标准库。桌面 App 和登录服务入口仅支持 macOS。
+```
+        ┌──── GR-DRAFT ────┐                    ══ adopted (flowing green)
+ROOT ═══│ CP-A  CP-B       │═══ direct ════╗    ── candidate (dashed)
+        └──────────────────┘               ╠══> GR-REVIEW
+                            ··· fallback ··╝    ✗  refuted (red)
+```
+
+## Try it in three commands
+
+Needs Node.js 22.12+ and Python 3.10+ on macOS or Linux. The Python side is
+standard library only.
 
 ```sh
-git clone https://github.com/wcboy/ocw-harness.git
-cd ocw-harness
 npm ci
 npm run ensure-ui
 npm start
 ```
 
-打开 <http://127.0.0.1:4173/?demo=paths> 查看可播放、暂停、逐步推进的演示。演示使用正式渲染器，明确标记模拟身份，不读取真实任务 API。根页面显示已注册任务；首次使用时目录为空。
+Then open <http://127.0.0.1:4173/?demo=paths> for a playable demo you can pause
+and step. The demo renders through the real renderer and is labelled as
+synthetic; it never reads a live task. The root page lists registered runtimes,
+and is empty until you register one.
 
-`ensure-ui` 核对源码和构建文件哈希，仅在过期时重建。更新源码后重新运行它并重启自己的控制台进程。`PORT` 可指定其他端口，`OCW_BUILD_DIR` 可指定构建目录。仓库发布版默认使用 `dist/`。
+## Run a real plan
 
-## 接入真实任务
+```sh
+./examples/quickstart/run.sh /tmp/ocw-demo
+```
 
-显式指定已存在的 canonical workflow / executor root；注册不会创建或修改任务状态。
+That builds a four-checkpoint plan across three groups with two competing
+paths, executes it, and prints the command to point the console at the result.
+[examples/README.md](examples/README.md) walks through what each file does and
+shows how to break a checkpoint on purpose to watch the failure surface.
+
+To write your own plan, the enforced schema is in
+[docs/plan-contract.md](docs/plan-contract.md) — every field, every bound, and a
+minimal plan that validates. Then:
+
+```sh
+python3 scripts/ocw_runtime.py init --root /absolute/new-runtime --plan /absolute/plan.json
+python3 scripts/ocw_runtime.py run  --root /absolute/new-runtime --workers 3
+python3 scripts/ocw_runtime.py status --root /absolute/new-runtime
+```
+
+`init` refuses an existing directory, and a plan that fails validation leaves
+nothing behind. Every command has `--help`.
+
+## Watch a runtime you already have
+
+Registration is observation only: it never creates or edits task state.
 
 ```sh
 node scripts/harness-registry.mjs register --source /absolute/runtime-root --session session-a
 ```
 
-默认 registry 位置由 `scripts/harness_registry.py` / `harness-registry.mjs` 决定，可通过 `OCW_HARNESS_REGISTRY_DIR` 指定隔离目录。注册、控制台和执行者须使用同一 registry。任务拥有者应保存注册返回的身份并续报心跳；仅有历史 assignment 不会显示为正在工作。
+The registry, console and executor must all agree on one registry directory.
+`OCW_HARNESS_REGISTRY_DIR` overrides the default, which is what you want for
+tests and for running two consoles side by side.
 
-新执行任务先按 [原生图合同](docs/native-graph-v2.md) 编写计划，然后选择一个尚不存在的运行目录：
+## Call it from your own code
 
-```sh
-python3 scripts/ocw_runtime.py init --root /absolute/new-runtime --plan /absolute/plan.json
-python3 scripts/ocw_runtime.py run --root /absolute/new-runtime --workers 3 --registry /absolute/registry
-python3 scripts/ocw_runtime.py status --root /absolute/new-runtime
-```
+Three supported entry points, in increasing order of coupling:
 
-原生计划将区域成员、依赖关系、备选路径、采用决策和逐点验收分开记录。每个点需要可重放的本地命令与独立验收命令；没有真实终审记录时不会制造 R5 通过。
-
-[运行、并发与恢复说明](RUNTIME-RELIABILITY.md) 包含心跳、守护进程、幂等交付、备份与新目录恢复入口。macOS 可通过 `scripts/install-desktop-launcher.sh` 安装桌面入口，通过 `scripts/manage-service.py --help` 查看登录服务选项。
-
-## 开发与验证
+**HTTP, read-only.** Every route is GET or HEAD; nothing mutates canonical
+state. [docs/api.md](docs/api.md) is the prose contract and
+[docs/openapi.json](docs/openapi.json) the machine-readable one, which
+`tests/api-contract.test.mjs` checks against a live server in both directions,
+so a field cannot appear or vanish without failing the suite.
 
 ```sh
-npm run check
-npx playwright install chromium
-npm run e2e
+curl -s localhost:4173/api/registry | jq '.registrations[].registrationId'
+curl -s "localhost:4173/api/snapshot?harness=$ID" | jq '.metrics'
 ```
 
-`check` 覆盖图合同、投影、并发、失效、验收、恢复、同步、类型与构建。`e2e` 使用合成任务和隔离 registry，检查实际浏览器交互、每秒 GET、快速切换、移动布局和 UI 版本切换，不写入真实任务。可用 `OCW_E2E_PORT` 避免测试端口冲突。
+**Python, to drive execution yourself.** `pip install -e .` and `Runtime`
+becomes the surface for claiming, heartbeating and finishing work under your own
+scheduler instead of `run`'s worker pool.
 
-源码结构：`src/` 为唯一 UI，`server.mjs` 为只读适配器，`scripts/ocw_runtime.py` 为可选执行器，`scripts/ocw_graph.py` 为计划校验与投影，`scripts/ocw_backup.py` 为备份恢复。
+```python
+from ocw_runtime import Runtime
 
-## Skill 与复用
+runtime = Runtime('/absolute/runtime-root')
+token = runtime.claim('my-scheduler-1')      # None when nothing is ready
+if token:
+    # token['spec']['argv'] is the command, already resolved for the adopted path
+    runtime.heartbeat(token)                 # before the 30s lease expires
+    runtime.finish(token, {'exitCode': 0, 'output': '...'}, True)
+```
 
-[SKILL.md](SKILL.md) 是可选 agent 入口，直接使用本仓库脚本和文档，不另存一份 UI 或执行器。可以将仓库克隆到 agent 的 skills 目录下，或直接在项目中指定此入口。
+`finish` is refused if your lease expired or the checkpoint was invalidated
+while you worked, which is the mechanism that stops a slow worker from
+committing a stale result.
 
-新控制台使用维护中的当前源码生成，保留最新设计：
+**Node, to project state into a different frontend.**
+`scripts/snapshot-projection.mjs` turns canonical on-disk shapes into the UI
+wire format with no filesystem, network or process access, so you can render
+this data somewhere else without adopting `server.mjs`. See the `exports` map in
+`package.json` for what is public.
+
+## Documentation
+
+| Document | Answers |
+|---|---|
+| [docs/plan-contract.md](docs/plan-contract.md) | What may I put in a plan, and what will be rejected? |
+| [docs/api.md](docs/api.md) | What does the HTTP adapter promise? |
+| [docs/native-graph-v2.md](docs/native-graph-v2.md) | How do groups, paths, decisions and invalidation behave? |
+| [RUNTIME-RELIABILITY.md](RUNTIME-RELIABILITY.md) | Leases, heartbeats, supervision, idempotent delivery, backup and restore. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How do I build, test and change a contract? |
+| [SKILL.md](SKILL.md) | Optional agent entry point that reuses these same scripts. |
+
+Numeric bounds live in `docs/plan-contract.md` and nowhere else, so that the
+code and the docs can only disagree in one place.
+
+## Development
+
+```sh
+npm run check                       # build, Node + Python tests, typecheck
+npx playwright install chromium && npm run e2e
+```
+
+`check` covers the graph contract, projection, concurrency, invalidation,
+acceptance, recovery, the HTTP contract, types and the build. `e2e` drives a
+real browser against a synthetic fixture and an isolated registry, never a real
+task; set `OCW_E2E_PORT` to avoid collisions.
+
+Layout: `src/` is the only UI, `server.mjs` the read-only adapter,
+`scripts/snapshot-projection.mjs` the pure projection layer,
+`scripts/ocw_runtime.py` the optional executor, `scripts/ocw_graph.py` plan
+validation, `scripts/ocw_backup.py` verified backup and restore.
+
+`ensure-ui` compares source and build fingerprints and rebuilds only when they
+differ. Re-run it after changing `src/` and restart your own console process.
+`PORT` and `OCW_BUILD_DIR` override the defaults; a released checkout ships
+`dist/`.
+
+To start a new console from the current design rather than a stale copy:
 
 ```sh
 python3 scripts/scaffold_console.py --reference /absolute/ocw-harness --destination /absolute/new-console
 ```
 
-生成器排除本地任务标签、注册数据和预构建文件。公开仓库采用干净源码快照，不包含开发者历史任务记录或本地 Git 历史。
+It excludes local task labels, registry data and prebuilt output.
 
-执行器的租约保护限于它自己的提交和交付边界，不构成任意命令的系统沙箱。外部操作必须由目标端支持幂等键和权威查询；结果不明时需要对账。恢复始终写入新目录并暂停，核对交付和路径后才可继续。
+## Limits
+
+`execution: "replay_safe"` is a claim you make about your own command. The
+runtime bounds time and output and kills the process group, but it does not
+contain what the command does — this is not a sandbox, only authorized local
+execution.
+
+Lease protection covers this harness's own commits and delivery boundary. An
+external side effect is only safe if the destination itself supports an
+idempotency key and an authoritative lookup; when a result is unknown it must be
+reconciled, not retried blindly. Restore always writes to a new directory and
+pauses for a human to check deliveries and old-host isolation before resuming.
+
+A separate acceptance command is not a separate auditor. It gives you evidence
+attributable to an oracle version, which is why the console declines to report a
+final verdict that no auditor produced.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
