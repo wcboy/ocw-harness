@@ -182,21 +182,65 @@ def update(args, root):
         atomic(path, record)
         return record
 
+def default_registry_dir():
+    return os.getenv('OCW_HARNESS_REGISTRY_DIR') or str(Path.home() / ('Library/Application Support/OCW Harness/registry' if sys.platform == 'darwin' else '.ocw-harness/registry'))
+
+
+EPILOG = """\
+Prints JSON on stdout; exits 1 with a message on stderr when rejected.
+
+A registration is metadata, never write authority. Keep the returned
+registrationId and instanceId in the owning process and heartbeat with a
+strictly increasing --seq; a closed or superseded instance cannot heartbeat.
+
+Examples:
+  ocw-registry register  --source /abs/canonical-root --session session-a --pid $$
+  ocw-registry heartbeat --id harness-... --instance ... --seq 1
+  ocw-registry close     --id harness-... --instance ...
+  ocw-registry list
+"""
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog='ocw-registry', description=__doc__, epilog=EPILOG,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest='command', required=True, metavar='<command>')
+
+    def command(name, summary):
+        child = commands.add_parser(name, help=summary, description=summary)
+        child.add_argument('--registry', default=default_registry_dir(), metavar='DIR',
+                           help='Registry directory (default: $OCW_HARNESS_REGISTRY_DIR or the per-user path)')
+        return child
+
+    def instance(child):
+        child.add_argument('--id', required=True, metavar='ID', help='registrationId returned by register')
+        child.add_argument('--instance', required=True, metavar='ID', help='instanceId returned by register')
+        return child
+
+    new = command('register', 'Register an existing canonical or executor root')
+    new.add_argument('--source', required=True, metavar='DIR', help='Existing root. Never created or modified')
+    new.add_argument('--session', metavar='ID', help='Defaults to $OCW_HARNESS_SESSION_ID, $CODEX_THREAD_ID, then "default"')
+    new.add_argument('--label', metavar='TEXT', help='Display label for the console')
+    new.add_argument('--id', metavar='ID', help='Reuse an existing registrationId')
+    new.add_argument('--pid', type=int, metavar='N', help='Owning process id, used for liveness')
+    new.add_argument('--instance', metavar='ID', help='Reuse an existing instanceId')
+    new.add_argument('--new-instance', action='store_true', help='Start a fresh instance for a new process or run')
+
+    beat = instance(command('heartbeat', 'Report liveness for a registered instance'))
+    beat.add_argument('--seq', required=True, type=int, metavar='N', help='Strictly increasing sequence')
+
+    instance(command('close', 'Close a registration so it stops counting as live'))
+
+    command('list', 'List every registration, with per-file parse errors')
+
+    changes = instance(command('update', 'Update restricted registration metadata'))
+    changes.add_argument('--updates', required=True, metavar='JSON', help='Object of fields to change')
+
+    return parser
+
+
 def main():
-    default = os.getenv('OCW_HARNESS_REGISTRY_DIR') or str(Path.home() / ('Library/Application Support/OCW Harness/registry' if sys.platform == 'darwin' else '.ocw-harness/registry'))
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['register', 'heartbeat', 'close', 'list', 'update'])
-    parser.add_argument('--registry', default=default)
-    parser.add_argument('--source')
-    parser.add_argument('--session')
-    parser.add_argument('--label')
-    parser.add_argument('--id')
-    parser.add_argument('--pid', type=int)
-    parser.add_argument('--instance')
-    parser.add_argument('--seq', type=int)
-    parser.add_argument('--new-instance', action='store_true')
-    parser.add_argument('--updates')
-    args = parser.parse_args()
+    args = build_parser().parse_args()
     root = Path(args.registry).expanduser().resolve()
     try:
         if args.command == 'list':
