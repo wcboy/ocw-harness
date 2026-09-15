@@ -9,7 +9,7 @@
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
-  <string>com.lamarwang.ocw-harness</string>
+  <string>io.github.wcboy.ocw-harness</string>
   <key>CFBundleName</key>
   <string>OCW Harness</string>
   <key>CFBundlePackageType</key>

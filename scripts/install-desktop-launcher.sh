@@ -4,7 +4,11 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 app_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 destination=${1:-"$HOME/Desktop/OCW Harness.app"}
-bundle_id="com.lamarwang.ocw-harness"
+# A bundle identifier belongs to whoever installs the app, so it is overridable.
+# The default is the repository owner rather than any one developer, and it must
+# match desktop/Info.plist so the clobber check below recognises our own app.
+bundle_prefix=${OCW_BUNDLE_PREFIX:-io.github.wcboy}
+bundle_id="$bundle_prefix.ocw-harness"
 plist_template="$app_dir/desktop/Info.plist"
 launcher_template="$app_dir/desktop/launcher"
 system_icon="/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericNetworkIcon.icns"
@@ -68,6 +72,7 @@ registry_path=${OCW_HARNESS_REGISTRY_DIR:-"$HOME/Library/Application Support/OCW
 
 mkdir -p "$contents_dir/MacOS" "$resources_dir"
 /usr/bin/install -m 644 "$plist_template" "$contents_dir/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle_id" "$contents_dir/Info.plist" >/dev/null
 /usr/bin/install -m 755 "$launcher_template" "$contents_dir/MacOS/launcher"
 /usr/bin/printf '%s\n' "$app_dir" >"$resources_dir/project-path"
 /bin/chmod 644 "$resources_dir/project-path"
